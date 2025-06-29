@@ -26,9 +26,7 @@ Main dependencies:
 
 ## GUI Application
 
-A web-based graphical user interface (GUI) for sequence generation and activity prediction is available at:
-
-👉 [MultiPepGen](https://multipepgen.medellin.unal.edu.co/)
+A web-based graphical user interface (GUI) for sequence generation and activity prediction is available at [MultiPepGen](https://multipepgen.medellin.unal.edu.co/)
 
 ## Citing MultiPepGen
 
