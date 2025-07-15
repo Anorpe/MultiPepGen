@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: "Orrego"
+    given-names: "A."
+  - family-names: "Contributors"
+    given-names: "MultiPepGen"
+title: "MultiPepGen: A Neural Network-Based Conditional GAN Model for Antimicrobial Peptide Sequence Generation"
+version: "1.0.0"
+doi: "10.5281/zenodo.XXXXXXX"
+date-released: 2025-01-01
+url: "https://github.com/username/MultiPepGen"
+repository-code: "https://github.com/username/MultiPepGen"
+license: MIT
+keywords:
+  - "antimicrobial peptides"
+  - "generative adversarial networks"
+  - "machine learning"
+  - "bioinformatics"
+  - "drug discovery" 
