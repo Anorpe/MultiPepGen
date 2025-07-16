@@ -2,7 +2,7 @@
 Basic usage example for MultiPepGen.
 
 This example demonstrates how to:
-1. Load and preprocess peptide data
+1. Load example peptide data
 2. Train a Conditional GAN model
 3. Generate synthetic peptide sequences
 4. Evaluate the generated sequences
@@ -11,6 +11,7 @@ This example demonstrates how to:
 import sys
 import os
 import numpy as np
+import pandas as pd
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -18,8 +19,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from multipepgen.models.gan import ConditionalGAN
 from multipepgen.models.generator import Generator
 from multipepgen.models.discriminator import Discriminator
-from multipepgen.data.preprocessing import PeptidePreprocessor
-from multipepgen.evaluation.metrics import PeptideEvaluator
 
 
 def main():
@@ -34,24 +33,15 @@ def main():
     batch_size = 32
     epochs = 10  # Reduced for example
     
-    # 1. Data preprocessing
-    print("\n1. Loading and preprocessing data...")
-    preprocessor = PeptidePreprocessor(
-        sequence_length=sequence_length,
-        vocab_size=vocab_size
-    )
-    
     # Load sample data (you would use your actual data path)
     data_path = "../data/data_sample.csv"
     try:
-        train_data, val_data = preprocessor.load_and_split_data(data_path)
+        train_data = pd.read_csv(data_path)
         print(f"Training samples: {len(train_data)}")
-        print(f"Validation samples: {len(val_data)}")
     except FileNotFoundError:
         print("Sample data not found. Using dummy data for demonstration.")
         # Create dummy data for demonstration
         train_data = np.random.rand(100, sequence_length, vocab_size)
-        val_data = np.random.rand(20, sequence_length, vocab_size)
     
     # 2. Model initialization
     print("\n2. Initializing models...")
@@ -124,7 +114,6 @@ def main():
     
     # 6. Evaluation
     print("\n6. Evaluating generated sequences...")
-    evaluator = PeptideEvaluator()
     
     # Convert to amino acid sequences (simplified)
     # In practice, you would decode the one-hot encoded sequences

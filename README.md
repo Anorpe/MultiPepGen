@@ -76,6 +76,10 @@ Main dependencies:
 - matplotlib
 - seaborn
 
+## Requisitos recomendados
+
+Se recomienda trabajar con **Python 3.10** para asegurar la compatibilidad con TensorFlow y todas las dependencias del proyecto. Versiones más recientes de Python (por ejemplo, 3.13) pueden no ser compatibles con algunas librerías científicas.
+
 ## 📊 GUI Application
 
 A web-based graphical user interface (GUI) for sequence generation and activity prediction is available at [MultiPepGen](https://multipepgen.medellin.unal.edu.co/)

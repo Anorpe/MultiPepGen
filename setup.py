@@ -10,7 +10,7 @@ setup(
     name="multipepgen",
     version="1.0.0",
     author="A. Orrego",
-    author_email="author@example.com",
+    author_email="aorregope@gmail.com",
     description="A neural network-based model for generating antimicrobial peptide sequences using Conditional GAN",
     long_description=long_description,
     long_description_content_type="text/markdown",
