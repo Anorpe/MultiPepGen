@@ -9,7 +9,7 @@ __version__ = "1.0.0"
 __author__ = "A. Orrego"
 __email__ = "author@example.com"
 
-from .models.gan import ConditionalGAN
+from .models.cgan import ConditionalGAN
 
 __all__ = [
     "ConditionalGAN"

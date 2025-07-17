@@ -1,0 +1,1 @@
+LABELS = ['microbiano', 'bacteriano', 'antigramneg', 'antigrampos', 'fungico', 'viral', 'cancer'] 

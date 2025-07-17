@@ -12,13 +12,16 @@ import sys
 import os
 import numpy as np
 import pandas as pd
+import tensorflow as tf
+from tensorflow.keras.losses import BinaryCrossentropy
+from tensorflow.keras.optimizers import Adam
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from multipepgen.models.gan import ConditionalGAN
-from multipepgen.models.generator import Generator
-from multipepgen.models.discriminator import Discriminator
+from multipepgen.utils.preprocessing import encoding
+from multipepgen.models.cgan import ConditionalGAN
+from multipepgen.config import LABELS
 
 
 def main():
@@ -27,86 +30,57 @@ def main():
     print("=" * 40)
     
     # Configuration
-    sequence_length = 50
-    vocab_size = 20
+    labels = LABELS
+    sequence_length = 35
+    vocab_size = 21
+    num_classes = 7
     latent_dim = 100
     batch_size = 32
-    epochs = 10  # Reduced for example
+    epochs = 1  # Reduced for example
     
     # Load sample data (you would use your actual data path)
-    data_path = "../data/data_sample.csv"
-    try:
-        train_data = pd.read_csv(data_path)
-        print(f"Training samples: {len(train_data)}")
-    except FileNotFoundError:
-        print("Sample data not found. Using dummy data for demonstration.")
-        # Create dummy data for demonstration
-        train_data = np.random.rand(100, sequence_length, vocab_size)
+    data_path = os.path.join(os.path.dirname(__file__), "data/data_sample.csv")
+    train_data = pd.read_csv(data_path)
+    print(f"\n Loading training samples: {len(train_data)}")
+    
+    data = train_data.drop(labels, axis = 'columns')
+    target = np.array(train_data[labels].values,dtype = "float32")
+    data_ohe = encoding(data)
+    print( (data_ohe.shape[1],data_ohe.shape[2], 1) )
+    dataset = tf.data.Dataset.from_tensor_slices((tf.cast(data_ohe,dtype = tf.float32), target))
+    dataset = dataset.shuffle(buffer_size=1024).batch(batch_size)
     
     # 2. Model initialization
-    print("\n2. Initializing models...")
-    generator = Generator(
-        sequence_length=sequence_length,
-        vocab_size=vocab_size,
-        latent_dim=latent_dim,
-        hidden_dims=(256, 512, 256),
-        dropout_rate=0.3
-    )
-    
-    discriminator = Discriminator(
-        sequence_length=sequence_length,
-        vocab_size=vocab_size,
-        hidden_dims=(256, 128, 64),
-        dropout_rate=0.3
-    )
-    
+    print("\n2. Initializing models...")    
     gan = ConditionalGAN(
-        generator=generator,
-        discriminator=discriminator,
-        latent_dim=latent_dim,
         sequence_length=sequence_length,
-        vocab_size=vocab_size
+        vocab_size=vocab_size,
+        latent_dim=latent_dim,
+        num_classes = num_classes
+        
+        
     )
     
     # 3. Model compilation
     print("\n3. Compiling model...")
     gan.compile(
-        g_optimizer="adam",
-        d_optimizer="adam",
-        g_loss_fn="binary_crossentropy",
-        d_loss_fn="binary_crossentropy"
+        d_optimizer=Adam(),
+        g_optimizer=Adam(),
+        loss_fn=BinaryCrossentropy()
     )
     
     # 4. Training (simplified for example)
     print("\n4. Training model...")
-    print("Note: This is a simplified training loop for demonstration.")
-    print("In practice, you would use the GANTrainer class.")
+    gan.fit(dataset, epochs = epochs)
     
-    # Simple training loop
-    for epoch in range(epochs):
-        # Sample batch
-        batch_size_actual = min(batch_size, len(train_data))
-        batch_indices = np.random.choice(len(train_data), batch_size_actual, replace=False)
-        batch_data = train_data[batch_indices]
-        
-        # Create dummy conditions
-        conditions = np.random.randn(batch_size_actual, 1)
-        
-        # Train step
-        loss = gan.train_on_batch([batch_data, conditions])
-        
-        if epoch % 2 == 0:
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {loss}")
+
     
     # 5. Generate sequences
     print("\n5. Generating synthetic sequences...")
     num_sequences = 10
-    conditions = np.random.randn(num_sequences, 1)
-    
-    generated_sequences = gan.generate_sequences(
-        num_sequences=num_sequences,
-        conditions=conditions,
-        temperature=1.0
+        
+    generated_sequences = gan.generate_class_random(
+        num_sequences=num_sequences
     )
     
     print(f"Generated {num_sequences} synthetic peptide sequences")
