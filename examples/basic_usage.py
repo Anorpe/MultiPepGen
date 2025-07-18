@@ -19,7 +19,8 @@ from tensorflow.keras.optimizers import Adam
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from multipepgen.utils.preprocessing import encoding
+from multipepgen.utils.preprocessing import preprocess_data
+from multipepgen.validation.metrics import validation_scores
 from multipepgen.models.cgan import ConditionalGAN
 from multipepgen.config import LABELS
 
@@ -39,16 +40,14 @@ def main():
     epochs = 1  # Reduced for example
     
     # Load sample data (you would use your actual data path)
+    
     data_path = os.path.join(os.path.dirname(__file__), "data/data_sample.csv")
     train_data = pd.read_csv(data_path)
     print(f"\n Loading training samples: {len(train_data)}")
+    dataset = preprocess_data(train_data, batch_size=batch_size)
+    print(f"Preprocessing de data")
     
-    data = train_data.drop(labels, axis = 'columns')
-    target = np.array(train_data[labels].values,dtype = "float32")
-    data_ohe = encoding(data)
-    print( (data_ohe.shape[1],data_ohe.shape[2], 1) )
-    dataset = tf.data.Dataset.from_tensor_slices((tf.cast(data_ohe,dtype = tf.float32), target))
-    dataset = dataset.shuffle(buffer_size=1024).batch(batch_size)
+    
     
     # 2. Model initialization
     print("\n2. Initializing models...")    
@@ -85,23 +84,17 @@ def main():
     
     print(f"Generated {num_sequences} synthetic peptide sequences")
     print(f"Sequence shape: {generated_sequences.shape}")
+    print("Show examples of sequences generated")
+    print(generated_sequences.head(5))
     
     # 6. Evaluation
     print("\n6. Evaluating generated sequences...")
-    
+    scores, scores_df = validation_scores(train_data, generated_sequences)
     # Convert to amino acid sequences (simplified)
     # In practice, you would decode the one-hot encoded sequences
-    print("Generated sequences (first 5):")
-    for i in range(min(5, num_sequences)):
-        # Simplified: just show the shape
-        print(f"Sequence {i+1}: shape {generated_sequences[i].shape}")
+    print(f"Validations Scores: {scores}")
     
     print("\nExample completed successfully!")
-    print("\nNext steps:")
-    print("- Use the full GANTrainer for proper training")
-    print("- Implement proper sequence decoding")
-    print("- Add more sophisticated evaluation metrics")
-    print("- Save and load trained models")
 
 
 if __name__ == "__main__":

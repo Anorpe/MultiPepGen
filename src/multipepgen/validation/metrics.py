@@ -1,7 +1,5 @@
-from __future__ import absolute_import, division, print_function
-# =========================
-# Imports estándar y de terceros
-# =========================
+import sys
+import os
 import warnings
 import numpy as np
 import pandas as pd
@@ -10,6 +8,12 @@ from scipy.stats import ks_2samp
 from difflib import SequenceMatcher
 from Bio import Align
 from typing import List, Optional, Tuple, Union
+
+# Add src to path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+
+from multipepgen.utils.preprocessing import amp_filter_df
+from multipepgen.utils.descriptors import get_features_df
 # NOTA: joblib, amp_filter_df, get_features_df, preprocessing_df, selected_features_xgboost, selection_robust deben estar definidos/importados
 
 # =========================
@@ -140,6 +144,9 @@ def sequence_matcher_max_ratio(sequence: str, data2: list[str]) -> float:
     float
         Máximo valor de similitud rápida encontrado.
     """
+    if len(data2) == 0:
+        return 0.0  # Evitar error cuando no hay secuencias para comparar
+    
     ratio = 0
     for sequence2 in data2:
         ratio = max(SequenceMatcher(None, sequence, sequence2).quick_ratio(), ratio)
@@ -162,6 +169,9 @@ def sequence_matcher_avg_ratio(sequence: str, data2: list[str]) -> float:
     float
         Promedio de similitud rápida.
     """
+    if len(data2) == 0:
+        return 0.0  # Evitar división por cero
+    
     ratio_sum = 0
     for sequence2 in data2:
         ratio_sum += SequenceMatcher(None, sequence, sequence2).quick_ratio()
@@ -257,6 +267,9 @@ def sequence_align_max_ratio(sequence: str, data2: list[str]) -> float:
     float
         Máxima puntuación de alineamiento encontrada.
     """
+    if len(data2) == 0:
+        return 0.0  # Evitar error cuando no hay secuencias para comparar
+    
     ratio = 0
     for sequence2 in data2:
         ratio = max(aligner.align(sequence, sequence2).score, ratio)
@@ -279,6 +292,9 @@ def sequence_align_avg_ratio(sequence: str, data2: list[str]) -> float:
     float
         Promedio de puntuaciones de alineamiento.
     """
+    if len(data2) == 0:
+        return 0.0  # Evitar división por cero
+    
     ratio_sum = 0
     for sequence2 in data2:
         ratio_sum += aligner.align(sequence, sequence2).score
@@ -432,7 +448,7 @@ def prediction_score(data_seq_descrip) -> tuple[float, np.ndarray]:
     return predictions_proba.mean(), predictions_proba
 
 
-def validation_score(data, data_robust, data_minmax, data_seq):
+def validation_scores(data, data_seq):
     """
     Calcula un conjunto de métricas de validación y calidad para un conjunto de secuencias generadas.
 
@@ -440,12 +456,13 @@ def validation_score(data, data_robust, data_minmax, data_seq):
     ----------
     data : pd.DataFrame
         DataFrame de referencia (original).
+    data_seq : pd.DataFrame
+        DataFrame de secuencias generadas.
     data_robust : pd.DataFrame
         DataFrame de descriptores robustos de referencia.
     data_minmax : pd.DataFrame
         DataFrame de descriptores minmax de referencia.
-    data_seq : pd.DataFrame
-        DataFrame de secuencias generadas.
+    
 
     Retorna
     -------
@@ -457,7 +474,7 @@ def validation_score(data, data_robust, data_minmax, data_seq):
     scores = {}
     generated_sequences = data_seq['sequence'].tolist()
     len_data_seq = data_seq.shape[0]
-    # Diversidad
+    # Metricas de Diversidad
     scores["repeat"] = repeat_score(data_seq)
     scores["intersect"] = intersect_score(data, data_seq)
     scores["sequence_matcher"], sequence_matchers = sequences_matcher_avg_ratio(data_seq['sequence'], data['sequence'])
@@ -467,21 +484,24 @@ def validation_score(data, data_robust, data_minmax, data_seq):
     scores["valid_sequences"] = data_seq.shape[0] / len_data_seq
     scores["align"], aligns = sequences_align_avg_ratio(data_seq['sequence'], data['sequence'])
     scores["align_self"], aligns_self = sequences_align_avg_ratio(data_seq['sequence'])
-    # Calidad
+    
+    
+    # Metricas de Calidad
     data_seq_descrip = get_features_df(data_seq)
-    minmax = joblib.load('models/minmax_generator.pkl')
-    data_seq_descrip_minmax = preprocessing_df(data_seq_descrip, minmax)
-    robust = joblib.load('models/robust_generator.pkl')
-    data_seq_descrip_robust = preprocessing_df(data_seq_descrip, robust)
-    scores["ks_2samp"], ks_2samp_columns = ks_2samp_score(data_robust[selection_robust], data_seq_descrip_robust[selection_robust])
-    scores["fretech"] = frechet_distance(
-        data_minmax.drop(["sequence"], axis='columns').sample(data_seq.shape[0]),
-        data_seq_descrip_minmax.drop(["sequence"], axis='columns')
-    )
-    scores["prediction"], predictions = prediction_score(data_seq_descrip)
+    data_descrip = get_features_df(data)
+    #minmax = joblib.load('models/minmax_generator.pkl')
+    #data_seq_descrip_minmax = preprocessing_df(data_seq_descrip, minmax)
+    #robust = joblib.load('models/robust_generator.pkl')
+    #data_seq_descrip_robust = preprocessing_df(data_seq_descrip, robust)
+    scores["ks_2samp"], ks_2samp_columns = ks_2samp_score(data_descrip, data_seq_descrip)
+    # scores["fretech"] = frechet_distance(
+    #     data_descrip.drop(["sequence"], axis='columns'),
+    #     data_seq_descrip.drop(["sequence"], axis='columns')
+    # )
+
     scores_df = {
         "sequence": generated_sequences,
-        "predictions": predictions,
+        #"predictions": predictions,
         "aligns": aligns,
         "aligns_self": aligns_self,
         "sequence_matchers": sequence_matchers,
@@ -489,3 +509,35 @@ def validation_score(data, data_robust, data_minmax, data_seq):
         "ks_2samp_columns": ks_2samp_columns
     }
     return scores, scores_df
+
+if __name__ == "__main__":
+    import pandas as pd
+    import sys
+    import os
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
+    # DataFrame de referencia (original)
+    data = pd.DataFrame({
+        'sequence': [
+            'ARNDCEQGHILKMFPSTWYV',
+            'ACDEFGHIKLMNPQRSTVWY',
+            'MFPSTWYVARNDCEQGHILK',
+            'GGGGGGGGGGGGGGGGGGGG',
+        ]
+    })
+    # DataFrame de secuencias generadas
+    data_seq = pd.DataFrame({
+        'sequence': [
+            'ARNDCEQGHILKMFPSTWYV',
+            'ACDEFGHIKLMNPQRSTVWY',
+            'VVVVVVVVVVVVVVVVVVVV',
+            'YYYYYYYYYYYYYYYYYYYYY',
+        ]
+    })
+    print("DataFrame de referencia:")
+    print(data)
+    print("\nDataFrame de secuencias generadas:")
+    print(data_seq)
+    print("\nCalculando métricas de validación...")
+    scores, scores_df = validation_scores(data, data_seq)
+    print("\nResultados de validación:")
+    print(scores)

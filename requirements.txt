@@ -30,8 +30,8 @@ jupyter>=1.0.0
 ipykernel>=6.0.0
 
 # Dependencias adicionales para validación y modelos
-scipy>=1.7.0
-biopython>=1.79
+biopython>=1.85
 joblib>=1.1.0
 imageio>=2.9.0
 xgboost>=1.5.0
+modlamp>=4.3.2
