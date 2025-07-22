@@ -2,6 +2,14 @@
 
 MultiPepGen is a neural network-based model designed to generate synthetic sequences of antimicrobial peptides with specific functionalities. It employs a Conditional GAN (Generative Adversarial Network) architecture with recurrent cells to create diverse and bioactive peptide sequences on demand.
 
+## 🧑‍🔬 Research Context
+
+This repository contains the official implementation of the methods and experiments described in:
+
+> Orrego, A. et al. (2025). *MultiPepGen: A Neural Network-Based Conditional GAN Model for Antimicrobial Peptide Sequence Generation*. [Journal Name, Volume(Issue), Pages]. DOI: [to be added when available]
+
+The code was used to obtain the results reported in the article. However, due to changes in computational environments, external dependencies, and data availability, **not all results may be fully reproducible out-of-the-box**. See the section on reproducibility below for details.
+
 ## 🚀 Quick Start
 
 ### Installation
@@ -85,7 +93,7 @@ MultiPepGen/
 ├── docs/                     # Documentation and figures
 │   ├── methodology.md
 │   └── figures/
-├── tests/                    # (Empty) Space for unit tests
+├── tests/                    # Unit tests for all modules (pytest)
 ├── requirements.txt          # Dependencies
 ├── README.md                 # This file
 ├── setup.py                  # Installation
@@ -111,6 +119,7 @@ Main dependencies:
 - imageio
 - xgboost
 - modlamp
+- pytest  # For running unit tests
 
 For the complete list and recommended versions, see `requirements.txt`.
 
@@ -129,8 +138,31 @@ A web-based graphical user interface for sequence generation and activity predic
 
 ## 🧪 Testing
 
-Currently, there are no tests implemented in the `tests/` folder, but you can add your own tests following the standard pytest structure.
+This project includes comprehensive unit tests for all main modules using **pytest**. Tests cover preprocessing, postprocessing, descriptors, validation metrics, and the ConditionalGAN model (with mocks for deep learning components).
 
+### Running the tests
+
+From the project root, simply run:
+
+```bash
+pytest
+```
+
+All tests are located in the `tests/` directory and follow best practices for scientific Python projects.
+
+- If you add new features or fix bugs, please add or update the corresponding tests.
+- Continuous integration is recommended for research reproducibility.
+
+## ⚠️ Reproducibility and Limitations
+
+While this repository provides the official codebase for the MultiPepGen article, **full reproducibility of all results may not be possible** due to:
+
+- **Training data:** The original training datasets are not included due to licensing and size constraints. Example data is provided for demonstration.
+- **Descriptor calculation:** Some descriptor functions rely on external libraries and specific versions, some of which are deprecated or no longer actively maintained. Results may vary depending on the environment and installed versions.
+- **Validation metrics:** Some validation metrics require pre-trained models or specific data splits, which may not be available or may yield slightly different results in other environments.
+- **Randomness:** The generative model uses random seeds and stochastic training, so results may vary between runs.
+
+If you need to reproduce specific results from the article, please contact the authors for guidance or access to the original data and models.
 
 ## 📖 Citing MultiPepGen
 

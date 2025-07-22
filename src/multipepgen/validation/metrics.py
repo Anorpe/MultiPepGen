@@ -9,7 +9,7 @@ from difflib import SequenceMatcher
 from Bio import Align
 from typing import List, Optional, Tuple, Union
 
-from multipepgen.utils.preprocessing import amp_filter_df
+from multipepgen.utils.preprocessing import filter_amp_df
 from multipepgen.utils.descriptors import get_features_df
 
 def _ensure_list(x):
@@ -654,8 +654,8 @@ def validation_scores(data, data_seq) -> Tuple[dict, dict]:
     scores["intersect"] = intersect_score(data, data_seq)
     scores["sequence_matcher"], sequence_matchers = sequences_matcher_avg_ratio(_ensure_list(data_seq['sequence']), _ensure_list(data['sequence']))
     scores["sequence_matcher_self"], sequence_matchers_self = sequences_matcher_avg_ratio(_ensure_list(data_seq['sequence']))
-    # Filtering valid sequences (define amp_filter_df)
-    data_seq_valid = amp_filter_df(data_seq)
+    # Filtering valid sequences (define filter_amp_df)
+    data_seq_valid = filter_amp_df(data_seq)
     scores["valid_sequences"] = data_seq_valid.shape[0] / len_data_seq if len_data_seq > 0 else 0.0
     scores["align"], aligns = sequences_align_avg_ratio(_ensure_list(data_seq_valid['sequence']), _ensure_list(data['sequence']))
     scores["align_self"], aligns_self = sequences_align_avg_ratio(_ensure_list(data_seq_valid['sequence']))
