@@ -8,16 +8,12 @@ This example demonstrates how to:
 4. Evaluate the generated sequences
 """
 
-import sys
 import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.losses import BinaryCrossentropy
 from tensorflow.keras.optimizers import Adam
-
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from multipepgen.utils.preprocessing import preprocess_data
 from multipepgen.validation.metrics import validation_scores
@@ -47,8 +43,6 @@ def main():
     dataset = preprocess_data(train_data, batch_size=batch_size)
     print(f"Preprocessing de data")
     
-    
-    
     # 2. Model initialization
     print("\n2. Initializing models...")    
     gan = ConditionalGAN(
@@ -56,8 +50,6 @@ def main():
         vocab_size=vocab_size,
         latent_dim=latent_dim,
         num_classes = num_classes
-        
-        
     )
     
     # 3. Model compilation
@@ -72,12 +64,10 @@ def main():
     print("\n4. Training model...")
     gan.fit(dataset, epochs = epochs)
     
-
-    
     # 5. Generate sequences
     print("\n5. Generating synthetic sequences...")
     num_sequences = 10
-        
+    
     generated_sequences = gan.generate_class_random(
         num_sequences=num_sequences
     )

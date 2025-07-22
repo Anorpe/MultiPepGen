@@ -9,393 +9,524 @@ from difflib import SequenceMatcher
 from Bio import Align
 from typing import List, Optional, Tuple, Union
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
 from multipepgen.utils.preprocessing import amp_filter_df
 from multipepgen.utils.descriptors import get_features_df
-# NOTA: joblib, amp_filter_df, get_features_df, preprocessing_df, selected_features_xgboost, selection_robust deben estar definidos/importados
 
-# =========================
-# 1. Pruebas de Hipótesis y Estadísticas
-# =========================
-def ks_2samp_test(
-    data1,
-    data2,
-    alpha: float = 0.05,
-    return_stat: bool = False
-) -> Union[bool, Tuple[bool, float]]:
+def _ensure_list(x):
     """
-    Realiza la prueba de Kolmogorov-Smirnov (KS) de dos muestras para comparar si ambas provienen de la misma distribución.
+    Convert pandas Series or DataFrame column to list if needed.
 
-    Parámetros
+    Parameters
     ----------
-    data1 : array-like
-        Primera muestra de datos.
-    data2 : array-like
-        Segunda muestra de datos.
-    alpha : float, opcional
-        Nivel de significancia para la prueba (por defecto 0.05).
-    return_stat : bool, opcional
-        Si es True, retorna también el estadístico KS además del resultado booleano.
+    x : pandas.Series, pandas.DataFrame, or list
+        Input to be converted to list if necessary.
 
-    Retorna
+    Returns
     -------
-    bool o (bool, float)
-        True si no se rechaza la hipótesis nula (las muestras pueden provenir de la misma distribución), False en caso contrario.
-        Si return_stat es True, también retorna el estadístico KS.
+    list
+        The input as a list.
+
+    Example
+    -------
+    >>> import pandas as pd
+    >>> _ensure_list(pd.Series([1,2,3]))
+    [1, 2, 3]
+    >>> _ensure_list([1,2,3])
+    [1, 2, 3]
     """
-    stat, p = ks_2samp(data1, data2)
-    resultado = p > alpha
-    if return_stat:
-        return resultado, stat
-    return resultado
+    if isinstance(x, pd.Series):
+        return x.tolist()
+    elif isinstance(x, pd.DataFrame):
+        # If DataFrame, try to use the first column
+        return x.iloc[:, 0].tolist()
+    return x
 
-
-def ks_2samp_score(descriptors1, descriptors2, alpha: float = 0.05) -> tuple[float, list]:
+# =========================
+# 1. Diversity Metrics
+# =========================
+def ks_2samp_test(reference_values, sample_values, alpha: float = 0.05, return_stat: bool = False) -> Union[bool, Tuple[bool, float]]:
     """
-    Calcula el porcentaje y la lista de descriptores que cumplen la prueba de Kolmogorov-Smirnov (ks_2samp).
+    Performs the Kolmogorov-Smirnov (KS) test for two samples to compare if both come from the same distribution.
 
-    Parámetros
+    Parameters
     ----------
-    descriptors1 : pd.DataFrame
-        DataFrame con los descriptores del primer conjunto de datos.
-    descriptors2 : pd.DataFrame
-        DataFrame con los descriptores del segundo conjunto de datos.
-    alpha : float, opcional
-        Nivel de significancia para la prueba KS (por defecto 0.05).
+    reference_values : array-like
+        Reference data sample.
+    sample_values : array-like
+        Sample data to compare.
+    alpha : float, optional
+        Significance level for the test (default 0.05).
+    return_stat : bool, optional
+        If True, also returns the KS statistic in addition to the boolean result.
 
-    Retorna
+    Returns
+    -------
+    bool or tuple of (bool, float)
+        True if the null hypothesis is not rejected (samples may come from the same distribution), False otherwise.
+        If return_stat is True, also returns the KS statistic (float).
+
+    Example
+    -------
+    >>> ks_2samp_test([1,2,3], [1,2,3])
+    True
+    """
+    stat, p = ks_2samp(reference_values, sample_values)
+    result = p > alpha
+    if return_stat:
+        return result, float(stat)
+    return result
+
+
+def ks_2samp_score(reference_descriptors, sample_descriptors, alpha: float = 0.05) -> tuple[float, list]:
+    """
+    Calculates the percentage and the list of descriptors that pass the Kolmogorov-Smirnov (ks_2samp) test.
+
+    Parameters
+    ----------
+    reference_descriptors : pandas.DataFrame
+        DataFrame with descriptors of the reference dataset.
+    sample_descriptors : pandas.DataFrame
+        DataFrame with descriptors of the sample dataset.
+    alpha : float, optional
+        Significance level for the KS test (default 0.05).
+
+    Returns
     -------
     score : float
-        Porcentaje de columnas/descriptores que no rechazan la hipótesis nula (distribuciones similares).
+        Percentage of columns/descriptors that do not reject the null hypothesis (similar distributions).
     passed_columns : list
-        Lista de nombres de columnas que cumplen la prueba KS.
+        List of column names that pass the KS test.
+
+    Raises
+    ------
+    ValueError
+        If either input is not a pandas DataFrame.
+
+    Example
+    -------
+    >>> import pandas as pd
+    >>> df1 = pd.DataFrame({'a': [1,2,3], 'b': [4,5,6]})
+    >>> df2 = pd.DataFrame({'a': [1,2,3], 'b': [4,5,6]})
+    >>> ks_2samp_score(df1, df2)
+    (1.0, ['a', 'b'])
     """
+    if not isinstance(reference_descriptors, pd.DataFrame) or not isinstance(sample_descriptors, pd.DataFrame):
+        raise ValueError("Both reference_descriptors and sample_descriptors must be pandas DataFrames.")
     passed_columns = []
-    total_columns = len(descriptors1.columns)
-    for column in descriptors1.columns:
-        resultado = ks_2samp_test(descriptors1[column], descriptors2[column], alpha=alpha)
-        if resultado:
+    total_columns = len(reference_descriptors.columns)
+    for column in reference_descriptors.columns:
+        result = ks_2samp_test(reference_descriptors[column], sample_descriptors[column], alpha=alpha)
+        if result:
             passed_columns.append(column)
     score = len(passed_columns) / total_columns if total_columns > 0 else 0.0
     return score, passed_columns
 
-# =========================
-# 2. Métricas de Diversidad
-# =========================
-def repeat_score(data: pd.DataFrame) -> float:
+
+def repeat_score(sequence_df: pd.DataFrame) -> float:
     """
-    Calcula el porcentaje de secuencias duplicadas en un DataFrame.
+    Calculates the percentage of duplicate sequences in a DataFrame.
 
-    Parámetros
+    Parameters
     ----------
-    data : pd.DataFrame
-        DataFrame que debe contener una columna 'sequence' con las secuencias a analizar.
+    sequence_df : pandas.DataFrame
+        DataFrame that must contain a 'sequence' column.
 
-    Retorna
+    Returns
     -------
     float
-        Proporción de secuencias duplicadas respecto al total.
+        Proportion of duplicate sequences with respect to the total.
+
+    Raises
+    ------
+    ValueError
+        If the input is not a DataFrame or does not contain a 'sequence' column.
+
+    Example
+    -------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'sequence': ['AAA', 'BBB', 'AAA']})
+    >>> repeat_score(df)
+    0.333...
     """
-    len_ini = data.shape[0]
-    data_unique = data.drop_duplicates(subset=["sequence"])
+    if not isinstance(sequence_df, pd.DataFrame) or 'sequence' not in sequence_df.columns:
+        raise ValueError("Input must be a DataFrame with a 'sequence' column.")
+    len_ini = sequence_df.shape[0]
+    data_unique = sequence_df.drop_duplicates(subset=["sequence"])
     len_uniques = data_unique.shape[0]
-    return (len_ini - len_uniques) / len_ini
+    return (len_ini - len_uniques) / len_ini if len_ini > 0 else 0.0
 
 
-def intersect_score(data_base: pd.DataFrame, data_sample: pd.DataFrame) -> float:
+def intersect_score(reference_df: pd.DataFrame, query_df: pd.DataFrame) -> float:
     """
-    Calcula el porcentaje de secuencias en data_sample que están presentes en data_base.
+    Calculates the percentage of sequences in query_df that are present in reference_df.
 
-    Parámetros
+    Parameters
     ----------
-    data_base : pd.DataFrame
-        DataFrame base con columna 'sequence'.
-    data_sample : pd.DataFrame
-        DataFrame de muestra con columna 'sequence'.
+    reference_df : pandas.DataFrame
+        Reference DataFrame with 'sequence' column.
+    query_df : pandas.DataFrame
+        Query DataFrame with 'sequence' column.
 
-    Retorna
+    Returns
     -------
     float
-        Proporción de secuencias de data_sample que están en data_base.
-    """
-    data_base_list = set(list(data_base["sequence"]))
-    data_sample_list = set(list(data_sample["sequence"]))
-    intersection = data_base_list & data_sample_list
-    return len(intersection) / len(data_sample_list)
+        Proportion of sequences in query_df that are in reference_df.
 
-# =========================
-# 3. Métricas de Similitud de Secuencias (SequenceMatcher)
-# =========================
-def sequence_matcher_max_ratio(sequence: str, data2: list[str]) -> float:
-    """
-    Calcula la máxima similitud rápida (quick_ratio) entre una secuencia y una lista de secuencias usando SequenceMatcher.
+    Raises
+    ------
+    ValueError
+        If either input is not a DataFrame or does not contain a 'sequence' column.
 
-    Parámetros
+    Example
+    -------
+    >>> import pandas as pd
+    >>> ref = pd.DataFrame({'sequence': ['AAA', 'BBB']})
+    >>> qry = pd.DataFrame({'sequence': ['AAA', 'CCC']})
+    >>> intersect_score(ref, qry)
+    0.5
+    """
+    if not (isinstance(reference_df, pd.DataFrame) and isinstance(query_df, pd.DataFrame)):
+        raise ValueError("Both reference_df and query_df must be DataFrames.")
+    if 'sequence' not in reference_df.columns or 'sequence' not in query_df.columns:
+        raise ValueError("Both DataFrames must have a 'sequence' column.")
+    ref_set = set(list(reference_df["sequence"]))
+    qry_set = set(list(query_df["sequence"]))
+    intersection = ref_set & qry_set
+    return len(intersection) / len(qry_set) if len(qry_set) > 0 else 0.0
+
+
+def sequence_matcher_max_ratio(sequence: str, sequence_list: list[str]) -> float:
+    """
+    Calculates the maximum quick_ratio similarity between a sequence and a list of sequences using SequenceMatcher.
+
+    Parameters
     ----------
     sequence : str
-        Secuencia a comparar.
-    data2 : list of str
-        Lista de secuencias contra las que se compara.
+        Sequence to compare.
+    sequence_list : list of str
+        List of sequences to compare against.
 
-    Retorna
+    Returns
     -------
     float
-        Máximo valor de similitud rápida encontrado.
+        Maximum quick_ratio similarity found.
+
+    Example
+    -------
+    >>> sequence_matcher_max_ratio('AAA', ['AAB', 'AAC'])
+    0.666...
     """
-    if len(data2) == 0:
-        return 0.0  # Evitar error cuando no hay secuencias para comparar
-    
+    if not isinstance(sequence_list, list):
+        sequence_list = list(sequence_list)
+    if len(sequence_list) == 0:
+        return 0.0
     ratio = 0
-    for sequence2 in data2:
+    for sequence2 in sequence_list:
         ratio = max(SequenceMatcher(None, sequence, sequence2).quick_ratio(), ratio)
     return ratio
 
 
-def sequence_matcher_avg_ratio(sequence: str, data2: list[str]) -> float:
+def sequence_matcher_avg_ratio(sequence: str, sequence_list: list[str]) -> float:
     """
-    Calcula el promedio de similitud rápida (quick_ratio) entre una secuencia y una lista de secuencias usando SequenceMatcher.
+    Calculates the average quick_ratio similarity between a sequence and a list of sequences using SequenceMatcher.
 
-    Parámetros
+    Parameters
     ----------
     sequence : str
-        Secuencia a comparar.
-    data2 : list of str
-        Lista de secuencias contra las que se compara.
+        Sequence to compare.
+    sequence_list : list of str
+        List of sequences to compare against.
 
-    Retorna
+    Returns
     -------
     float
-        Promedio de similitud rápida.
+        Average quick_ratio similarity.
+
+    Example
+    -------
+    >>> sequence_matcher_avg_ratio('AAA', ['AAB', 'AAC'])
+    0.666...
     """
-    if len(data2) == 0:
-        return 0.0  # Evitar división por cero
-    
+    if not isinstance(sequence_list, list):
+        sequence_list = list(sequence_list)
+    if len(sequence_list) == 0:
+        return 0.0
     ratio_sum = 0
-    for sequence2 in data2:
+    for sequence2 in sequence_list:
         ratio_sum += SequenceMatcher(None, sequence, sequence2).quick_ratio()
-    return ratio_sum / len(data2)
+    return ratio_sum / len(sequence_list)
 
 
-def sequences_matcher_avg_ratio(data1: list[str], data2: Optional[List[str]] = None) -> Tuple[float, List[float]]:
+def sequences_matcher_avg_ratio(sequence_list: list[str], reference_list: Optional[List[str]] = None) -> Tuple[float, List[float]]:
     """
-    Calcula el promedio de las similitudes promedio entre secuencias de data1 y data2 (o entre sí mismas si data2 es None).
+    Calculates the average of the average similarities between sequences in sequence_list and reference_list (or among themselves if reference_list is None).
 
-    Parámetros
+    Parameters
     ----------
-    data1 : list of str
-        Lista de secuencias a comparar.
-    data2 : list of str, opcional
-        Lista de referencia. Si es None, se compara cada secuencia de data1 con el resto de data1.
+    sequence_list : list of str or pandas.Series
+        List of sequences to compare.
+    reference_list : list of str or pandas.Series, optional
+        Reference list. If None, each sequence in sequence_list is compared with the rest of sequence_list.
 
-    Retorna
+    Returns
     -------
     float
-        Promedio de similitud.
+        Average similarity.
     list of float
-        Lista de similitudes individuales.
+        List of individual similarities.
+
+    Example
+    -------
+    >>> sequences_matcher_avg_ratio(['AAA', 'AAB', 'AAC'])
+    (0.666..., [...])
     """
-    if data2 is None:
+    sequence_list = _ensure_list(sequence_list)
+    if reference_list is not None:
+        reference_list = _ensure_list(reference_list)
+    if reference_list is None:
         ratio_sum = 0
         ratios = []
-        data = list(data1)
-        for sequence in data1:
-            data_aux = list(data1.copy())
+        for sequence in sequence_list:
+            data_aux = list(sequence_list)
             data_aux.remove(sequence)
             aux = sequence_matcher_avg_ratio(sequence, data_aux)
             ratio_sum += aux
             ratios.append(aux)
-        return ratio_sum / len(data1), ratios
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0, ratios
     else:
         ratio_sum = 0
         ratios = []
-        for sequence1 in data1:
-            aux = sequence_matcher_avg_ratio(sequence1, data2)
+        for sequence1 in sequence_list:
+            aux = sequence_matcher_avg_ratio(sequence1, reference_list)
             ratio_sum += aux
             ratios.append(aux)
-        return ratio_sum / len(data1), ratios
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0, ratios
 
 
-def sequences_matcher_max_ratio(data1: list[str], data2: Optional[List[str]] = None) -> float:
+def sequences_matcher_max_ratio(sequence_list: list[str], reference_list: Optional[List[str]] = None) -> float:
     """
-    Calcula el promedio de las máximas similitudes entre secuencias de data1 y data2 (o entre sí mismas si data2 es None).
+    Calculates the average of the maximum similarities between sequences in sequence_list and reference_list (or among themselves if reference_list is None).
 
-    Parámetros
+    Parameters
     ----------
-    data1 : list of str
-        Lista de secuencias a comparar.
-    data2 : list of str, opcional
-        Lista de referencia. Si es None, se compara cada secuencia de data1 con el resto de data1.
+    sequence_list : list of str or pandas.Series
+        List of sequences to compare.
+    reference_list : list of str or pandas.Series, optional
+        Reference list. If None, each sequence in sequence_list is compared with the rest of sequence_list.
 
-    Retorna
+    Returns
     -------
     float
-        Promedio de la máxima similitud encontrada para cada secuencia.
+        Average of the maximum similarity found for each sequence.
+
+    Example
+    -------
+    >>> sequences_matcher_max_ratio(['AAA', 'AAB', 'AAC'])
+    0.833...
     """
-    if data2 is None:
+    sequence_list = _ensure_list(sequence_list)
+    if reference_list is not None:
+        reference_list = _ensure_list(reference_list)
+    if reference_list is None:
         ratio_sum = 0
-        for sequence in data1:
-            data_aux = list(data1.copy())
+        for sequence in sequence_list:
+            data_aux = list(sequence_list)
             data_aux.remove(sequence)
             ratio_sum += sequence_matcher_max_ratio(sequence, data_aux)
-        return ratio_sum / len(data1)
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0
     else:
         ratio_sum = 0
-        for sequence1 in data1:
-            ratio_sum += sequence_matcher_max_ratio(sequence1, data2)
-        return ratio_sum / len(data1)
+        for sequence1 in sequence_list:
+            ratio_sum += sequence_matcher_max_ratio(sequence1, reference_list)
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0
 
-# =========================
-# 4. Métricas de Similitud de Secuencias (Alineamiento)
-# =========================
 aligner = Align.PairwiseAligner()
 
-def sequence_align_max_ratio(sequence: str, data2: list[str]) -> float:
+def sequence_align_max_ratio(sequence: str, sequence_list: list[str]) -> float:
     """
-    Calcula la máxima puntuación de alineamiento entre una secuencia y una lista de secuencias usando PairwiseAligner.
+    Calculates the maximum alignment score between a sequence and a list of sequences using PairwiseAligner.
 
-    Parámetros
+    Parameters
     ----------
     sequence : str
-        Secuencia a comparar.
-    data2 : list of str
-        Lista de secuencias contra las que se compara.
+        Sequence to compare.
+    sequence_list : list of str
+        List of sequences to compare against.
 
-    Retorna
+    Returns
     -------
     float
-        Máxima puntuación de alineamiento encontrada.
+        Maximum alignment score found.
+
+    Example
+    -------
+    >>> sequence_align_max_ratio('AAA', ['AAB', 'AAC'])
+    0.666...
     """
-    if len(data2) == 0:
-        return 0.0  # Evitar error cuando no hay secuencias para comparar
-    
+    if not isinstance(sequence_list, list):
+        sequence_list = list(sequence_list)
+    if len(sequence_list) == 0:
+        return 0.0
     ratio = 0
-    for sequence2 in data2:
+    for sequence2 in sequence_list:
         ratio = max(aligner.align(sequence, sequence2).score, ratio)
     return ratio
 
 
-def sequence_align_avg_ratio(sequence: str, data2: list[str]) -> float:
+def sequence_align_avg_ratio(sequence: str, sequence_list: list[str]) -> float:
     """
-    Calcula el promedio de puntuaciones de alineamiento entre una secuencia y una lista de secuencias usando PairwiseAligner.
+    Calculates the average alignment score between a sequence and a list of sequences using PairwiseAligner.
 
-    Parámetros
+    Parameters
     ----------
     sequence : str
-        Secuencia a comparar.
-    data2 : list of str
-        Lista de secuencias contra las que se compara.
+        Sequence to compare.
+    sequence_list : list of str
+        List of sequences to compare against.
 
-    Retorna
+    Returns
     -------
     float
-        Promedio de puntuaciones de alineamiento.
+        Average alignment score.
+
+    Example
+    -------
+    >>> sequence_align_avg_ratio('AAA', ['AAB', 'AAC'])
+    0.666...
     """
-    if len(data2) == 0:
-        return 0.0  # Evitar división por cero
-    
+    if not isinstance(sequence_list, list):
+        sequence_list = list(sequence_list)
+    if len(sequence_list) == 0:
+        return 0.0
     ratio_sum = 0
-    for sequence2 in data2:
+    for sequence2 in sequence_list:
         ratio_sum += aligner.align(sequence, sequence2).score
-    return ratio_sum / len(data2)
+    return ratio_sum / len(sequence_list)
 
 
-def sequences_align_avg_ratio(data1: list[str], data2: Optional[List[str]] = None) -> Tuple[float, List[float]]:
+def sequences_align_avg_ratio(sequence_list: list[str], reference_list: Optional[List[str]] = None) -> Tuple[float, List[float]]:
     """
-    Calcula el promedio de las puntuaciones promedio de alineamiento entre secuencias de data1 y data2 (o entre sí mismas si data2 es None).
+    Calculates the average of the average alignment scores between sequences in sequence_list and reference_list (or among themselves if reference_list is None).
 
-    Parámetros
+    Parameters
     ----------
-    data1 : list of str
-        Lista de secuencias a comparar.
-    data2 : list of str, opcional
-        Lista de referencia. Si es None, se compara cada secuencia de data1 con el resto de data1.
+    sequence_list : list of str or pandas.Series
+        List of sequences to compare.
+    reference_list : list of str or pandas.Series, optional
+        Reference list. If None, each sequence in sequence_list is compared with the rest of sequence_list.
 
-    Retorna
+    Returns
     -------
     float
-        Promedio de puntuaciones de alineamiento.
+        Average of the average alignment scores.
     list of float
-        Lista de puntuaciones individuales.
+        List of individual average alignment scores.
+
+    Example
+    -------
+    >>> sequences_align_avg_ratio(['AAA', 'AAB', 'AAC'])
+    (0.666..., [...])
     """
-    if data2 is None:
+    sequence_list = _ensure_list(sequence_list)
+    if reference_list is not None:
+        reference_list = _ensure_list(reference_list)
+    if reference_list is None:
         ratio_sum = 0
         ratios = []
-        data = list(data1)
-        for sequence in data1:
-            data_aux = list(data1.copy())
+        for sequence in sequence_list:
+            data_aux = list(sequence_list)
             data_aux.remove(sequence)
             aux = sequence_align_avg_ratio(sequence, data_aux)
             ratio_sum += aux
             ratios.append(aux)
-        return ratio_sum / len(data1), ratios
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0, ratios
     else:
         ratio_sum = 0
         ratios = []
-        for sequence1 in data1:
-            aux = sequence_align_avg_ratio(sequence1, data2)
+        for sequence1 in sequence_list:
+            aux = sequence_align_avg_ratio(sequence1, reference_list)
             ratio_sum += aux
             ratios.append(aux)
-        return ratio_sum / len(data1), ratios
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0, ratios
 
 
-def sequences_align_max_ratio(data1: list[str], data2: Optional[List[str]] = None) -> float:
+def sequences_align_max_ratio(sequence_list: list[str], reference_list: Optional[List[str]] = None) -> float:
     """
-    Calcula el promedio de las máximas puntuaciones de alineamiento entre secuencias de data1 y data2 (o entre sí mismas si data2 es None).
+    Calculates the average of the maximum alignment scores between sequences in sequence_list and reference_list (or among themselves if reference_list is None).
 
-    Parámetros
+    Parameters
     ----------
-    data1 : list of str
-        Lista de secuencias a comparar.
-    data2 : list of str, opcional
-        Lista de referencia. Si es None, se compara cada secuencia de data1 con el resto de data1.
+    sequence_list : list of str or pandas.Series
+        List of sequences to compare.
+    reference_list : list of str or pandas.Series, optional
+        Reference list. If None, each sequence in sequence_list is compared with the rest of sequence_list.
 
-    Retorna
+    Returns
     -------
     float
-        Promedio de la máxima puntuación de alineamiento encontrada para cada secuencia.
+        Average of the maximum alignment scores.
+
+    Example
+    -------
+    >>> sequences_align_max_ratio(['AAA', 'AAB', 'AAC'])
+    0.833...
     """
-    if data2 is None:
+    sequence_list = _ensure_list(sequence_list)
+    if reference_list is not None:
+        reference_list = _ensure_list(reference_list)
+    if reference_list is None:
         ratio_sum = 0
-        for sequence in data1:
-            data_aux = list(data1.copy())
+        for sequence in sequence_list:
+            data_aux = list(sequence_list)
             data_aux.remove(sequence)
             ratio_sum += sequence_align_max_ratio(sequence, data_aux)
-        return ratio_sum / len(data1)
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0
     else:
         ratio_sum = 0
-        for sequence1 in data1:
-            ratio_sum += sequence_align_max_ratio(sequence1, data2)
-        return ratio_sum / len(data1)
+        for sequence1 in sequence_list:
+            ratio_sum += sequence_align_max_ratio(sequence1, reference_list)
+        return ratio_sum / len(sequence_list) if len(sequence_list) > 0 else 0.0
 
 # =========================
-# 5. Frechet Distance (FID)
+# 5. Quality Metrics
 # =========================
-def frechet_distance(descriptores1: np.ndarray, descriptores2: np.ndarray, eps: float = 1e-6, axis: int = 0) -> float:
+def frechet_distance(descriptors1: np.ndarray, descriptors2: np.ndarray, eps: float = 1e-6, axis: int = 0) -> float:
     """
-    Calcula la Frechet Distance (FID) entre dos conjuntos de descriptores.
+    Calculates the Frechet Distance (FID) between two sets of descriptors.
 
-    Parámetros
+    Parameters
     ----------
-    descriptores1 : np.ndarray
-        Matriz de descriptores del primer conjunto.
-    descriptores2 : np.ndarray
-        Matriz de descriptores del segundo conjunto.
-    eps : float, opcional
-        Pequeño valor para estabilidad numérica.
-    axis : int, opcional
-        Eje sobre el que calcular la media y covarianza.
+    descriptors1 : numpy.ndarray
+        Descriptor matrix of the first set.
+    descriptors2 : numpy.ndarray
+        Descriptor matrix of the second set.
+    eps : float, optional
+        Small value for numerical stability.
+    axis : int, optional
+        Axis over which to calculate the mean and covariance.
 
-    Retorna
+    Returns
     -------
     float
-        Distancia de Frechet entre los dos conjuntos.
+        Frechet distance between the two sets.
+
+    Raises
+    ------
+    ValueError
+        If the covariance matrix is not positive semi-definite or has imaginary components.
+
+    Example
+    -------
+    >>> import numpy as np
+    >>> a = np.random.rand(10, 5)
+    >>> b = np.random.rand(10, 5)
+    >>> frechet_distance(a, b)
+    0.0  # (example value)
     """
-    mu1 = np.mean(descriptores1, axis=axis)
-    sigma1 = np.cov(descriptores1, rowvar=not bool(axis))
-    mu2 = np.mean(descriptores2, axis=axis)
-    sigma2 = np.cov(descriptores2, rowvar=not bool(axis))
+    mu1 = np.mean(descriptors1, axis=axis)
+    sigma1 = np.cov(descriptors1, rowvar=not bool(axis))
+    mu2 = np.mean(descriptors2, axis=axis)
+    sigma2 = np.cov(descriptors2, rowvar=not bool(axis))
     mu1 = np.atleast_1d(mu1)
     mu2 = np.atleast_1d(mu2)
     sigma1 = np.atleast_2d(sigma1)
@@ -403,102 +534,135 @@ def frechet_distance(descriptores1: np.ndarray, descriptores2: np.ndarray, eps: 
     assert mu1.shape == mu2.shape, "Training and test mean vectors have different lengths"
     assert sigma1.shape == sigma2.shape, "Training and test covariances have different dimensions"
     diff = mu1 - mu2
-    covmean, _ = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
+    covmean = linalg.sqrtm(sigma1.dot(sigma2), disp=False)
+    # Handle if linalg.sqrtm returns a tuple (matrix, info)
+    if isinstance(covmean, tuple):
+        covmean = covmean[0]
     if not np.isfinite(covmean).all():
-        msg = "fid calculation produces singular product; adding %s to diagonal of cov estimates" % eps
+        msg = f"fid calculation produces singular product; adding {eps} to diagonal of cov estimates"
         warnings.warn(msg)
         offset = np.eye(sigma1.shape[0]) * eps
         covmean = linalg.sqrtm((sigma1 + offset).dot(sigma2 + offset))
+        if isinstance(covmean, tuple):
+            covmean = covmean[0]
     if np.iscomplexobj(covmean):
         if not np.allclose(np.diagonal(covmean).imag, 0, atol=1e-3):
             m = np.max(np.abs(covmean.imag))
-            raise ValueError("Imaginary component {}".format(m))
+            raise ValueError(f"Imaginary component {m}")
         covmean = covmean.real
     tr_covmean = np.trace(covmean)
     return diff.dot(diff) + np.trace(sigma1) + np.trace(sigma2) - 2 * tr_covmean
 
 # =========================
-# 6. Predicción y Validación (requiere dependencias externas)
+# 6. Prediction and Validation (requires external dependencies)
 # =========================
-# NOTA: joblib, selected_features_xgboost, amp_filter_df, get_features_df, preprocessing_df, selection_robust deben estar definidos/importados
-
-def prediction_score(data_seq_descrip) -> tuple[float, np.ndarray]:
+def prediction_score(data_seq_descrip, scaler_path='models/MinMaxScaler.pkl', xgboost_path='models/xgboost_train.pkl', selected_features=None) -> tuple[float, np.ndarray]:
     """
-    Predice la probabilidad de pertenencia a la clase positiva usando un modelo XGBoost previamente entrenado.
+    Predicts the probability of belonging to the positive class using a previously trained XGBoost model.
 
-    Parámetros
+    Parameters
     ----------
-    data_seq_descrip : pd.DataFrame
-        DataFrame con los descriptores de las secuencias.
+    data_seq_descrip : pandas.DataFrame
+        DataFrame with the sequence descriptors.
+    scaler_path : str, optional
+        Path to the scaler model file (default 'models/MinMaxScaler.pkl').
+    xgboost_path : str, optional
+        Path to the XGBoost model file (default 'models/xgboost_train.pkl').
+    selected_features : list of str
+        List of feature names to use for prediction.
 
-    Retorna
+    Returns
     -------
     float
-        Promedio de las probabilidades predichas.
-    np.ndarray
-        Vector de probabilidades predichas para cada muestra.
+        Mean of the predicted probabilities.
+    numpy.ndarray
+        Vector of predicted probabilities for each sample.
+
+    Raises
+    ------
+    ImportError
+        If joblib is not installed.
+    RuntimeError
+        If there is an error loading the model files.
+    ValueError
+        If selected_features is not provided.
+
+    Example
+    -------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'f1': [0.1, 0.2], 'f2': [0.3, 0.4]})
+    >>> prediction_score(df, scaler_path='scaler.pkl', xgboost_path='model.pkl', selected_features=['f1', 'f2'])
+    (0.5, array([0.5, 0.5]))  # (example values)
     """
-    scaler = joblib.load('models/MinMaxScaler.pkl')
-    xgboost = joblib.load('models/xgboost_train.pkl')
-    predictions = []
-    data_seq_descrip = data_seq_descrip[selected_features_xgboost]
+    try:
+        import joblib
+    except ImportError:
+        raise ImportError("joblib is required for loading models. Please install it.")
+    try:
+        scaler = joblib.load(scaler_path)
+        xgboost = joblib.load(xgboost_path)
+    except Exception as e:
+        raise RuntimeError(f"Error loading model files: {e}")
+    if selected_features is None:
+        raise ValueError("selected_features must be provided.")
+    data_seq_descrip = data_seq_descrip[selected_features]
     data_seq_descrip_scaler = scaler.transform(data_seq_descrip)
     predictions = xgboost.predict_proba(data_seq_descrip_scaler)
     predictions_proba = np.array([x[1] for x in predictions])
     return predictions_proba.mean(), predictions_proba
 
 
-def validation_scores(data, data_seq):
+def validation_scores(data, data_seq) -> Tuple[dict, dict]:
     """
-    Calcula un conjunto de métricas de validación y calidad para un conjunto de secuencias generadas.
+    Calculates a set of validation and quality metrics for a set of generated sequences.
 
-    Parámetros
+    Parameters
     ----------
-    data : pd.DataFrame
-        DataFrame de referencia (original).
-    data_seq : pd.DataFrame
-        DataFrame de secuencias generadas.
-    data_robust : pd.DataFrame
-        DataFrame de descriptores robustos de referencia.
-    data_minmax : pd.DataFrame
-        DataFrame de descriptores minmax de referencia.
-    
+    data : pandas.DataFrame
+        Reference DataFrame (original).
+    data_seq : pandas.DataFrame
+        DataFrame of generated sequences.
 
-    Retorna
+    Returns
     -------
     scores : dict
-        Diccionario con métricas de validación y calidad.
+        Dictionary with validation and quality metrics.
     scores_df : dict
-        Diccionario con resultados detallados por secuencia.
+        Dictionary with detailed results per sequence.
+
+    Raises
+    ------
+    ValueError
+        If either input is not a DataFrame or does not contain a 'sequence' column.
+
+    Example
+    -------
+    >>> import pandas as pd
+    >>> df_real = pd.DataFrame({'sequence': ['AAA', 'BBB']})
+    >>> df_gen = pd.DataFrame({'sequence': ['AAA', 'CCC']})
+    >>> scores, scores_df = validation_scores(df_real, df_gen)
     """
+    if not (isinstance(data, pd.DataFrame) and isinstance(data_seq, pd.DataFrame)):
+        raise ValueError("Both data and data_seq must be pandas DataFrames.")
+    if 'sequence' not in data.columns or 'sequence' not in data_seq.columns:
+        raise ValueError("Both DataFrames must have a 'sequence' column.")
     scores = {}
     generated_sequences = data_seq['sequence'].tolist()
     len_data_seq = data_seq.shape[0]
-    # Metricas de Diversidad
+    # Diversity metrics
     scores["repeat"] = repeat_score(data_seq)
     scores["intersect"] = intersect_score(data, data_seq)
-    scores["sequence_matcher"], sequence_matchers = sequences_matcher_avg_ratio(data_seq['sequence'], data['sequence'])
-    scores["sequence_matcher_self"], sequence_matchers_self = sequences_matcher_avg_ratio(data_seq['sequence'])
-    # Filtrado de secuencias válidas (definir amp_filter_df)
-    data_seq = amp_filter_df(data_seq)
-    scores["valid_sequences"] = data_seq.shape[0] / len_data_seq
-    scores["align"], aligns = sequences_align_avg_ratio(data_seq['sequence'], data['sequence'])
-    scores["align_self"], aligns_self = sequences_align_avg_ratio(data_seq['sequence'])
-    
-    
-    # Metricas de Calidad
-    data_seq_descrip = get_features_df(data_seq)
+    scores["sequence_matcher"], sequence_matchers = sequences_matcher_avg_ratio(_ensure_list(data_seq['sequence']), _ensure_list(data['sequence']))
+    scores["sequence_matcher_self"], sequence_matchers_self = sequences_matcher_avg_ratio(_ensure_list(data_seq['sequence']))
+    # Filtering valid sequences (define amp_filter_df)
+    data_seq_valid = amp_filter_df(data_seq)
+    scores["valid_sequences"] = data_seq_valid.shape[0] / len_data_seq if len_data_seq > 0 else 0.0
+    scores["align"], aligns = sequences_align_avg_ratio(_ensure_list(data_seq_valid['sequence']), _ensure_list(data['sequence']))
+    scores["align_self"], aligns_self = sequences_align_avg_ratio(_ensure_list(data_seq_valid['sequence']))
+    # Quality metrics
+    data_seq_descrip = get_features_df(data_seq_valid)
     data_descrip = get_features_df(data)
-    #minmax = joblib.load('models/minmax_generator.pkl')
-    #data_seq_descrip_minmax = preprocessing_df(data_seq_descrip, minmax)
-    #robust = joblib.load('models/robust_generator.pkl')
-    #data_seq_descrip_robust = preprocessing_df(data_seq_descrip, robust)
     scores["ks_2samp"], ks_2samp_columns = ks_2samp_score(data_descrip, data_seq_descrip)
-    # scores["fretech"] = frechet_distance(
-    #     data_descrip.drop(["sequence"], axis='columns'),
-    #     data_seq_descrip.drop(["sequence"], axis='columns')
-    # )
-
     scores_df = {
         "sequence": generated_sequences,
         #"predictions": predictions,
@@ -512,10 +676,7 @@ def validation_scores(data, data_seq):
 
 if __name__ == "__main__":
     import pandas as pd
-    import sys
-    import os
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
-    # DataFrame de referencia (original)
+    # Reference DataFrame (original)
     data = pd.DataFrame({
         'sequence': [
             'ARNDCEQGHILKMFPSTWYV',
@@ -524,7 +685,7 @@ if __name__ == "__main__":
             'GGGGGGGGGGGGGGGGGGGG',
         ]
     })
-    # DataFrame de secuencias generadas
+    # DataFrame of generated sequences
     data_seq = pd.DataFrame({
         'sequence': [
             'ARNDCEQGHILKMFPSTWYV',
@@ -533,11 +694,11 @@ if __name__ == "__main__":
             'YYYYYYYYYYYYYYYYYYYYY',
         ]
     })
-    print("DataFrame de referencia:")
+    print("Reference DataFrame:")
     print(data)
-    print("\nDataFrame de secuencias generadas:")
+    print("\nGenerated sequences DataFrame:")
     print(data_seq)
-    print("\nCalculando métricas de validación...")
+    print("\nCalculating validation metrics...")
     scores, scores_df = validation_scores(data, data_seq)
-    print("\nResultados de validación:")
+    print("\nValidation results:")
     print(scores)

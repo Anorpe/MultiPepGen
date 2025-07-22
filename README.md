@@ -8,7 +8,7 @@ MultiPepGen is a neural network-based model designed to generate synthetic seque
 
 ```bash
 # Clone the repository
-git clone https://github.com/username/MultiPepGen.git
+git clone https://github.com/anorpe/MultiPepGen.git
 cd MultiPepGen
 
 # Install dependencies
@@ -21,47 +21,76 @@ pip install -e .
 ### Basic Usage
 
 ```python
-from multipepgen import ConditionalGAN, PeptidePreprocessor
+import pandas as pd
+from multipepgen.models.cgan import ConditionalGAN
+from multipepgen.utils.preprocessing import preprocess_data
+from multipepgen.validation.metrics import validation_scores
+from multipepgen.config import LABELS
 
-# Load and preprocess data
-preprocessor = PeptidePreprocessor(sequence_length=50, vocab_size=20)
-train_data, val_data = preprocessor.load_and_split_data("data/data_sample.csv")
+# Configuration
+sequence_length = 35
+vocab_size = 21
+num_classes = 7
+latent_dim = 100
+batch_size = 32
 
-# Initialize and train model
-gan = ConditionalGAN(generator, discriminator)
-# ... training code ...
+# Load and preprocess example data
+data_path = "examples/data/data_sample.csv"
+df = pd.read_csv(data_path)
+dataset = preprocess_data(df, batch_size=batch_size)
+
+# Model initialization and compilation
+gan = ConditionalGAN(
+    sequence_length=sequence_length,
+    vocab_size=vocab_size,
+    latent_dim=latent_dim,
+    num_classes=num_classes
+)
+gan.compile(
+    d_optimizer="adam",
+    g_optimizer="adam",
+    loss_fn="binary_crossentropy"
+)
+
+# Training (adjust epochs as needed)
+gan.fit(dataset, epochs=10)
 
 # Generate synthetic sequences
-sequences = gan.generate_sequences(num_sequences=100)
-```
+num_sequences = 10
+generated_sequences = gan.generate_class_random(num_sequences=num_sequences)
+print(generated_sequences.head())
 
-### Training
-
-```bash
-# Train with default configuration
-python scripts/train.py --config configs/default_config.yaml
-
-# Train with custom data
-python scripts/train.py --config configs/default_config.yaml --data-path your_data.csv
+# Evaluation of generated sequences
+scores, scores_df = validation_scores(df, generated_sequences)
+print(scores)
 ```
 
 ## 📁 Project Structure
 
 ```
 MultiPepGen/
-├── src/multipepgen/          # Main package source code
-│   ├── models/              # GAN architecture implementations
-│   ├── data/                # Data preprocessing and loading
-│   ├── training/            # Training utilities and callbacks
-│   ├── evaluation/          # Evaluation metrics and visualization
-│   └── utils/               # Utility functions
-├── scripts/                 # Executable scripts
-├── notebooks/               # Jupyter notebooks for exploration
-├── configs/                 # Configuration files
-├── tests/                   # Unit tests
-├── examples/                # Usage examples
-├── docs/                    # Documentation
-└── results/                 # Output directory for models and results
+├── src/multipepgen/          # Main source code
+│   ├── models/               # Conditional GAN architecture implementation
+│   │   └── cgan.py           # Main ConditionalGAN model
+│   ├── utils/                # Utility functions (preprocessing, postprocessing, descriptors)
+│   ├── validation/           # Sequence metrics and validation
+│   ├── config.py             # Configuration and labels
+│   └── __init__.py
+├── examples/                 # Usage example and sample data
+│   ├── basic_usage.py        # Example script
+│   └── data/
+│       └── data_sample.csv   # Sample data
+├── configs/                  # Configuration files
+│   └── default_config.yaml
+├── docs/                     # Documentation and figures
+│   ├── methodology.md
+│   └── figures/
+├── tests/                    # (Empty) Space for unit tests
+├── requirements.txt          # Dependencies
+├── README.md                 # This file
+├── setup.py                  # Installation
+├── pyproject.toml            # Build configuration
+└── LICENSE                   # License
 ```
 
 ## 🔧 Requirements
@@ -75,45 +104,39 @@ Main dependencies:
 - pyyaml
 - matplotlib
 - seaborn
+- plotly
+- tqdm
+- biopython
+- joblib
+- imageio
+- xgboost
+- modlamp
 
-## Requisitos recomendados
+For the complete list and recommended versions, see `requirements.txt`.
 
-Se recomienda trabajar con **Python 3.10** para asegurar la compatibilidad con TensorFlow y todas las dependencias del proyecto. Versiones más recientes de Python (por ejemplo, 3.13) pueden no ser compatibles con algunas librerías científicas.
+## Recommended Environment
 
-## 📊 GUI Application
+It is recommended to use **Python 3.10** to ensure compatibility with TensorFlow and all project dependencies. More recent versions of Python may not be compatible with some scientific libraries.
 
-A web-based graphical user interface (GUI) for sequence generation and activity prediction is available at [MultiPepGen](https://multipepgen.medellin.unal.edu.co/)
+## 📊 Web Application (GUI)
+
+A web-based graphical user interface for sequence generation and activity prediction is available at: [MultiPepGen](https://multipepgen.medellin.unal.edu.co/)
 
 ## 📚 Documentation
 
-- [API Reference](docs/api.md)
 - [Methodology](docs/methodology.md)
-- [Results and Benchmarks](docs/results.md)
-- [Examples](examples/)
+- [Usage Example](examples/basic_usage.py)
 
 ## 🧪 Testing
 
-```bash
-# Run all tests
-pytest tests/
+Currently, there are no tests implemented in the `tests/` folder, but you can add your own tests following the standard pytest structure.
 
-# Run with coverage
-pytest tests/ --cov=multipepgen
-```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
 
 ## 📖 Citing MultiPepGen
 
-If you use this code or the GUI application in your research, please cite:
+If you use this code or the web application in your research, please cite:
 
-> Orrego, A. et al. (2025). *MultiPepGen: A Neural Network-Based Conditional GAN Model for Antimicrobial Peptide Sequence Generation*. [Journal Name, Volume(Issue), Pages]. DOI: [add when available]
+> Orrego, A. et al. (2025). *MultiPepGen: A Neural Network-Based Conditional GAN Model for Antimicrobial Peptide Sequence Generation*. [Journal Name, Volume(Issue), Pages]. DOI: [to be added when available]
 
 **BibTeX:**
 ```bibtex

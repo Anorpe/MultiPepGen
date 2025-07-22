@@ -3,10 +3,33 @@ import pandas as pd
 from Bio.SeqUtils.ProtParam import ProteinAnalysis
 from modlamp.descriptors import GlobalDescriptor
 from collections import Counter
+import warnings
 
-
+try:
+    from tqdm import tqdm
+    TQDM_AVAILABLE = True
+except ImportError:
+    TQDM_AVAILABLE = False
 
 def get_GAAC(seq):
+    """
+    Calculate the Grouped Amino Acid Composition (GAAC) features for a peptide sequence.
+
+    Parameters
+    ----------
+    seq : str
+        Amino acid sequence.
+
+    Returns
+    -------
+    dict
+        Dictionary with GAAC feature names as keys and their normalized frequencies as values.
+
+    Example
+    -------
+    >>> get_GAAC('ACDEFGHIKLMNPQRSTVWY')
+    {'GAAC_aliphatic': ..., 'GAAC_aromatic': ..., ...}
+    """
     group = {
         'GAAC_aliphatic': 'GAVLMI',
         'GAAC_aromatic': 'FYW',
@@ -14,13 +37,10 @@ def get_GAAC(seq):
         'GAAC_negativecharge': 'DE',
         'GAAC_uncharged': 'STCPNQ'
     }
-
     fts = {}
-
     groupKey = group.keys()
     count = Counter(seq)
     myDict = {}
-
     for key in groupKey:
         for aa in group[key]:
             myDict[key] = myDict.get(key, 0) + count[aa]
@@ -28,8 +48,25 @@ def get_GAAC(seq):
         fts[key]=(myDict[key]/len(seq))
     return fts
 
-
 def get_GDPC(seq):
+    """
+    Calculate the Grouped Dipeptide Composition (GDPC) features for a peptide sequence.
+
+    Parameters
+    ----------
+    seq : str
+        Amino acid sequence.
+
+    Returns
+    -------
+    dict
+        Dictionary with GDPC feature names as keys and their normalized frequencies as values.
+
+    Example
+    -------
+    >>> get_GDPC('ACDEFGHIKLMNPQRSTVWY')
+    {'GDPC_aliphatic.aliphatic': ..., 'GDPC_aliphatic.aromatic': ..., ...}
+    """
     group = {
         'aliphatic': 'GAVLMI',
         'aromatic': 'FYW',
@@ -37,42 +74,52 @@ def get_GDPC(seq):
         'negativecharge': 'DE',
         'uncharged': 'STCPNQ'
     }
-
     groupKey = group.keys()
     baseNum = len(groupKey)
     dipeptide = [g1 + '.' + g2 for g1 in groupKey for g2 in groupKey]
-
     index = {}
     for key in groupKey:
         for aa in group[key]:
             index[aa] = key
-
     fts = {}
-
-
-
     myDict = {}
     for t in dipeptide:
         myDict[t] = 0
-
     sum = 0
     for j in range(len(seq) - 2 + 1):
         myDict[index[seq[j]] + '.' + index[seq[j + 1]]] = myDict[index[seq[j]] + '.' + index[
             seq[j + 1]]] + 1
         sum = sum + 1
-
     if sum == 0:
         for t in dipeptide:
             fts['GDPC_'+t]=0
-            #code.append(0)
     else:
         for t in dipeptide:
-
             fts['GDPC_'+t]=(myDict[t] / sum)
-
     return fts
 
 def get_GTPC(seq):
+    """
+    Calculate the Grouped Tripeptide Composition (GTPC) features for a peptide sequence.
+
+    Parameters
+    ----------
+    seq : str
+        Amino acid sequence.
+
+    Returns
+    -------
+    dict
+        Dictionary with GTPC feature names as keys and their normalized frequencies as values.
+
+    Example
+    -------
+    >>> get_GTPC('ACDEFGHIKLMNPQRSTVWY')
+    {'GTPC_aliphatic.aliphatic.aliphatic': ..., ...}
+    """
+    if len(seq) < 3:
+        warnings.warn(f"Sequence too short for GTPC features: '{seq}'")
+        return {f'GTPC_{k1}.{k2}.{k3}': 0 for k1 in ['aliphatic','aromatic','positivecharge','negativecharge','uncharged'] for k2 in ['aliphatic','aromatic','positivecharge','negativecharge','uncharged'] for k3 in ['aliphatic','aromatic','positivecharge','negativecharge','uncharged']}
     group = {
         'aliphatic': 'GAVLMI',
         'aromatic': 'FYW',
@@ -80,16 +127,13 @@ def get_GTPC(seq):
         'negativecharge': 'DE',
         'uncharged': 'STCPNQ'
     }
-
     groupKey = group.keys()
     baseNum = len(groupKey)
     triple = [g1+'.'+g2+'.'+g3 for g1 in groupKey for g2 in groupKey for g3 in groupKey]
-
     index = {}
     for key in groupKey:
         for aa in group[key]:
             index[aa] = key
-
     fts = {}
     myDict = {}
     for t in triple:
@@ -104,10 +148,41 @@ def get_GTPC(seq):
     else:
         for t in triple:
             fts['GTPC_'+t]=(myDict[t]/sum)
-
     return fts
 
+def CalculateKSCTriad(sequence, gap, features, AADict):
+    """
+    Calculate the C-Triad features for a sequence with a given gap.
+    """
+    res = []
+    for g in range(gap+1):
+        myDict = {f: 0 for f in features}
+        for i in range(len(sequence)):
+            if i+gap+1 < len(sequence) and i+2*gap+2<len(sequence):
+                fea = AADict[sequence[i]] + '.' + AADict[sequence[i+gap+1]]+'.'+AADict[sequence[i+2*gap+2]]
+                myDict[fea] = myDict[fea] + 1
+        maxValue, minValue = max(myDict.values()), min(myDict.values())
+        for f in features:
+            if maxValue == 0:
+                res.append(0)  # Avoid division by zero
+            else:
+                res.append((myDict[f] - minValue) / maxValue)
+    return res
+
 def get_grouped_aa_features(features):
+    """
+    Add grouped amino acid composition features (GAAC, GDPC, GTPC) to a feature dictionary.
+
+    Parameters
+    ----------
+    features : dict
+        Feature dictionary with at least the key 'sequence'.
+
+    Returns
+    -------
+    dict
+        Updated feature dictionary including grouped amino acid features.
+    """
     gaac = get_GAAC(features['sequence'])
     gdpc = get_GDPC(features['sequence'])
     gdtp = get_GTPC(features['sequence'])
@@ -117,6 +192,19 @@ def get_grouped_aa_features(features):
     return features
 
 def get_global_features(features):
+    """
+    Add global physicochemical features to a feature dictionary using modlamp and Bio.SeqUtils.
+
+    Parameters
+    ----------
+    features : dict
+        Feature dictionary with at least the key 'sequence'.
+
+    Returns
+    -------
+    dict
+        Updated feature dictionary including global features.
+    """
     seq = features['sequence']
     desc = GlobalDescriptor(seq)
     desc.calculate_MW(amide=False)
@@ -141,28 +229,23 @@ def get_global_features(features):
     return features
 
 def get_ctriad_features(features):
-    def CalculateKSCTriad(sequence, gap, features, AADict):
-        res = []
-        for g in range(gap+1):
-            myDict = {}
-            for f in features:
-                myDict[f] = 0
+    """
+    Add C-Triad features to a feature dictionary.
 
-            for i in range(len(sequence)):
-                if i+gap+1 < len(sequence) and i+2*gap+2<len(sequence):
-                    fea = AADict[sequence[i]] + '.' + AADict[sequence[i+gap+1]]+'.'+AADict[sequence[i+2*gap+2]]
-                    myDict[fea] = myDict[fea] + 1
+    Parameters
+    ----------
+    features : dict
+        Feature dictionary with at least the key 'sequence'.
 
-            maxValue, minValue = max(myDict.values()), min(myDict.values())
-            for f in features:
-                if maxValue == 0:
-                    res.append(0)  # Evitar división por cero
-                else:
-                    res.append((myDict[f] - minValue) / maxValue)
-
-        return res
-
-
+    Returns
+    -------
+    dict
+        Updated feature dictionary including C-Triad features.
+    """
+    seq = features['sequence']
+    if len(seq) < 3:
+        warnings.warn(f"Sequence too short for C-Triad features: '{seq}'")
+        return features
     AAGroup = {
         'g1': 'AGV',
         'g2': 'ILFP',
@@ -178,7 +261,6 @@ def get_ctriad_features(features):
         for aa in AAGroup[g]:
             AADict[aa] = g
     feats = [f1 + '.'+ f2 + '.' + f3 for f1 in myGroups for f2 in myGroups for f3 in myGroups]
-    seq = features['sequence']
     desc = CalculateKSCTriad(seq, 0, feats, AADict)
     feats = ['CTriad_'+feat for feat in feats]
     ctriad_dic = {feats[i]:desc[i] for i in range(len(desc))}
@@ -186,45 +268,85 @@ def get_ctriad_features(features):
     return features
 
 def get_features(seq):
-    """This function receives a seqIO sequence container as inpunt and returns a feature
-    dictionary."""
+    """
+    Compute all features for a given amino acid sequence.
+
+    Parameters
+    ----------
+    seq : str
+        Amino acid sequence.
+
+    Returns
+    -------
+    collections.OrderedDict
+        Feature dictionary with all computed features.
+
+    Example
+    -------
+    >>> get_features('ACDEFGHIKLMNPQRSTVWY')
+    OrderedDict([...])
+    """
     features = collections.OrderedDict()
     features['sequence'] = seq
     features['length'] = len(seq)
     features = get_global_features(features)
     features = get_grouped_aa_features(features)
     features = get_ctriad_features(features)
-
     return features
 
+def get_features_df(sequences_df, show_progress: bool = False):
+    """
+    Compute features for all sequences in a DataFrame.
 
+    Parameters
+    ----------
+    sequences_df : pandas.DataFrame
+        DataFrame with a 'sequence' column.
 
-def get_features_df(sequences_df):
-  # Calculamos los descriptores
-  features_list = []
+    Returns
+    -------
+    pandas.DataFrame
+        DataFrame with computed features for each sequence.
 
-  for index, peptido in sequences_df.iterrows():
-        features = get_features(peptido['sequence'])
-        features_list.append(features)
-  
-
-  data_features = pd.DataFrame(features_list)
-  return data_features
+    Example
+    -------
+    >>> import pandas as pd
+    >>> df = pd.DataFrame({'sequence': ['ACDEFGHIKLMNPQRSTVWY']})
+    >>> get_features_df(df)
+    ...
+    """
+    if 'sequence' not in sequences_df.columns:
+        raise ValueError("Input DataFrame must contain a 'sequence' column.")
+    features_list = []
+    iterator = sequences_df.iterrows()
+    if show_progress and TQDM_AVAILABLE:
+        iterator = tqdm(iterator, total=len(sequences_df), desc="Extracting features")
+    for _, row in iterator:
+        seq = row['sequence']
+        if not isinstance(seq, str):
+            warnings.warn(f"Sequence must be a string, got {type(seq)}. Skipping.")
+            continue
+        try:
+            features = get_features(seq)
+            features_list.append(features)
+        except Exception as e:
+            warnings.warn(f"Error processing sequence '{seq}': {e}. Skipping.")
+    return pd.DataFrame(features_list)
 
 if __name__ == "__main__":
     import pandas as pd
-    # DataFrame de ejemplo con secuencias
+    # Minimal test
     data = pd.DataFrame({
         'sequence': [
             'ARNDCEQGHILKMFPSTWYV',
             'ACDEFGHIKLMNPQRSTVWY',
             'MFPSTWYVARNDCEQGHILK',
-            'GGGGGGGGGGGGGGGGGGGG',  # Secuencia repetitiva
+            'GGGGGGGGGGGGGGGGGGGG',
         ]
     })
-    print("DataFrame de entrada:")
+    print("Input DataFrame:")
     print(data)
-    print("\nCalculando descriptores...")
-    features_df = get_features_df(data)
-    print("\nDataFrame de descriptores:")
+    print("\nCalculating descriptors...")
+    features_df = get_features_df(data, show_progress=True)
+    print("\nDescriptors DataFrame:")
     print(features_df.head())
