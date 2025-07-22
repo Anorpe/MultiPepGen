@@ -1,0 +1,57 @@
+# MultiPepGen Default Configuration
+
+# Data configuration
+data:
+  sequence_length: 50
+  vocab_size: 20
+  train_split: 0.8
+  validation_split: 0.2
+  batch_size: 32
+  shuffle_buffer: 1000
+
+# Model configuration
+model:
+  sequence_length: 50
+  vocab_size: 20
+  latent_dim: 100
+  generator_hidden_dims: [256, 512, 256]
+  discriminator_hidden_dims: [256, 128, 64]
+  dropout_rate: 0.3
+
+# Training configuration
+training:
+  epochs: 100
+  learning_rate_generator: 0.0002
+  learning_rate_discriminator: 0.0002
+  beta1: 0.5
+  beta2: 0.999
+  discriminator_steps: 1
+  generator_steps: 1
+  save_interval: 10
+  log_interval: 100
+  
+# Loss functions
+loss:
+  generator: "binary_crossentropy"
+  discriminator: "binary_crossentropy"
+  
+# Callbacks
+callbacks:
+  early_stopping:
+    patience: 20
+    restore_best_weights: true
+  reduce_lr:
+    factor: 0.5
+    patience: 10
+    min_lr: 1e-7
+    
+# Evaluation
+evaluation:
+  metrics: ["accuracy", "precision", "recall", "f1"]
+  num_generated_samples: 1000
+  
+# Output
+output:
+  model_dir: "results/models"
+  logs_dir: "results/logs"
+  figures_dir: "results/figures" 
