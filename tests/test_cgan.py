@@ -5,7 +5,7 @@ from multipepgen.models.cgan import ConditionalGAN
 from multipepgen.config import LABELS
 
 class DummyGenerator:
-    def predict(self, x):
+    def predict(self, x, **kwargs):
         batch_size = x.shape[0]
         seq_len = 5
         vocab_size = 21
