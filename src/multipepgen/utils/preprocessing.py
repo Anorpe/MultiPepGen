@@ -8,7 +8,10 @@ import pandas as pd
 import tensorflow as tf
 import random
 from sklearn.preprocessing import OneHotEncoder
-from multipepgen.config import LABELS, VALID_AMINOACIDS, SET_VALID_AMINOACIDS
+from multipepgen.config import LABELS, VALID_AMINOACIDS, SET_VALID_AMINOACIDS, DEFAULT_CONFIG
+from multipepgen.utils.logger import logger
+
+DEF_MAX_LEN = DEFAULT_CONFIG['data']['sequence_length']
 
 # Initialize the OneHotEncoder
 X = np.array(VALID_AMINOACIDS)
@@ -33,7 +36,7 @@ def complete_sequence(sequence: str, max_len: int) -> str:
         raise ValueError(f"Input sequence length ({len(sequence)}) exceeds max_len ({max_len}).")
     return sequence + '_' * (max_len - len(sequence))
 
-def encode_sequences(df: pd.DataFrame, max_len: int = 35) -> np.ndarray:
+def encode_sequences(df: pd.DataFrame, max_len: int = DEF_MAX_LEN) -> np.ndarray:
     """
     Applies one-hot encoding to a set of amino acid sequences in a DataFrame.
 
@@ -59,7 +62,7 @@ def encode_sequences(df: pd.DataFrame, max_len: int = 35) -> np.ndarray:
     ]
     return np.array(encoded, dtype="float32")
 
-def preprocess_data(df: pd.DataFrame, batch_size: int = 32, max_len: int = 35) -> tf.data.Dataset:
+def preprocess_data(df: pd.DataFrame, batch_size: int = 32, max_len: int = DEF_MAX_LEN) -> tf.data.Dataset:
     """
     Preprocesses input data for model training, including one-hot encoding and batching.
 
@@ -85,7 +88,7 @@ def filter_amp(
     sequence: str,
     valid_aas: set = SET_VALID_AMINOACIDS,
     min_aas: int = 7,
-    max_aas: int = 35,
+    max_aas: int = DEF_MAX_LEN,
     min_unique_aas: int = 3,
     verbose: bool = False
 ) -> bool:
@@ -102,22 +105,19 @@ def filter_amp(
 
     Returns:
         bool: True if the sequence meets all criteria, False otherwise.
-
-    Side Effects:
-        Prints to stdout if verbose is True.
     """
     if not (min_aas <= len(sequence) <= max_aas):
         if verbose:
-            print(f"Discarded {sequence} due to length {len(sequence)}")
+            logger.debug(f"Discarded {sequence} due to length {len(sequence)}")
         return False
     set_diff = set(sequence) - valid_aas
     if set_diff:
         if verbose:
-            print(f"Discarded {sequence} due to containing {set_diff}")
+            logger.debug(f"Discarded {sequence} due to containing {set_diff}")
         return False
     if len(set(sequence)) < min_unique_aas:
         if verbose:
-            print(f"Discarded {sequence} due to low amino acid diversity")
+            logger.debug(f"Discarded {sequence} due to low amino acid diversity")
         return False
     return True
 
@@ -133,22 +133,19 @@ def replace_bzj(sequence: str, verbose: bool = False) -> str:
 
     Returns:
         str: Modified sequence with ambiguous codes replaced.
-
-    Side Effects:
-        Prints to stdout if verbose is True.
     """
     res = sequence.replace('B', random.choice(['N', 'D']))
     res = res.replace('Z', random.choice(['Q', 'E']))
     res = res.replace('J', random.choice(['I', 'L']))
     if res != sequence and verbose:
-        print(f"{sequence} ---> {res}")
+        logger.info(f"Substituted: {sequence} ---> {res}")
     return res
 
 def filter_amp_df(
     df: pd.DataFrame,
     valid_aas: set = SET_VALID_AMINOACIDS,
     min_aas: int = 7,
-    max_aas: int = 35,
+    max_aas: int = DEF_MAX_LEN,
     min_unique_aas: int = 3,
     verbose: bool = False
 ) -> pd.DataFrame:

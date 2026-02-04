@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple, Union
 
 from multipepgen.utils.preprocessing import filter_amp_df
 from multipepgen.utils.descriptors import get_features_df
+from multipepgen.utils.logger import logger
 
 def _ensure_list(x):
     """
@@ -694,11 +695,11 @@ if __name__ == "__main__":
             'YYYYYYYYYYYYYYYYYYYYY',
         ]
     })
-    print("Reference DataFrame:")
-    print(data)
-    print("\nGenerated sequences DataFrame:")
-    print(data_seq)
-    print("\nCalculating validation metrics...")
+    logger.info("Reference DataFrame:")
+    logger.info(data.to_string())
+    logger.info("\nGenerated sequences DataFrame:")
+    logger.info(data_seq.to_string())
+    logger.info("\nCalculating validation metrics...")
     scores, scores_df = validation_scores(data, data_seq)
-    print("\nValidation results:")
+    logger.info("\nValidation results:")
     print(scores)

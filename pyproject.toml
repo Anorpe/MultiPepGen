@@ -2,7 +2,7 @@
 name = "multipepgen"
 version = "1.0.0"
 description = "A neural network-based model for generating antimicrobial peptide sequences using Conditional GAN"
-authors = ["A. Orrego <author@example.com>"]
+authors = ["A. Orrego <aorregope@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 
