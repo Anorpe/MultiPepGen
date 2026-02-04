@@ -8,7 +8,7 @@ Este documento detalla las tareas necesarias para elevar la calidad del reposito
 
 ## 🛠 Fase 2: Interfaz de Usuario y Usabilidad
 - [x] **Implementación de CLI**: Crear `src/multipepgen/cli.py` para permitir el entrenamiento y generación desde la terminal (ej: `multipepgen train --config ...`).
-- [x] **Notebook de Tutorial**: Crear un Jupyter Notebook en `notebooks/reproducibilidad_figuras.ipynb` que replique una o dos figuras clave del artículo usando el modelo pre-entrenado.
+- [x] **Notebook de Tutorial**: Crear un Jupyter Notebook en `notebooks/tutorial_reproducibility.ipynb` que replique una o dos figuras clave del artículo usando el modelo pre-entrenado.
 
 ## 🏗 Fase 3: Robustez del Código y Refactorización
 - [x] **Migración a Logging**: Reemplazar los `print()` por el módulo `logging` de Python para un control profesional de la salida por consola.
