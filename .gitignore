@@ -134,7 +134,8 @@ dmypy.json
 *.pt
 
 # Model files
-models/
+# models/
+!src/multipepgen/models/
 checkpoints/
 saved_models/
 
